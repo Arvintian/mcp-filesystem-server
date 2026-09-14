@@ -40,6 +40,45 @@ func (fs *FilesystemHandler) HandleWriteFile(
 		path = cwd
 	}
 
+	// Create parent directories before full validation, since validatePath
+	// requires the parent directory to exist (it resolves symlinks of the
+	// parent). Only do this after a quick allowed-directory check so we never
+	// create directories outside the allowed paths.
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				mcp.TextContent{
+					Type: "text",
+					Text: fmt.Sprintf("Error resolving path: %v", err),
+				},
+			},
+			IsError: true,
+		}, nil
+	}
+	if !fs.isPathInAllowedDirs(absPath) {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				mcp.TextContent{
+					Type: "text",
+					Text: fmt.Sprintf("Error: access denied - path outside allowed directories: %s", absPath),
+				},
+			},
+			IsError: true,
+		}, nil
+	}
+	if err := os.MkdirAll(filepath.Dir(absPath), 0755); err != nil {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				mcp.TextContent{
+					Type: "text",
+					Text: fmt.Sprintf("Error creating parent directories: %v", err),
+				},
+			},
+			IsError: true,
+		}, nil
+	}
+
 	validPath, err := fs.validatePath(path)
 	if err != nil {
 		return &mcp.CallToolResult{
@@ -60,20 +99,6 @@ func (fs *FilesystemHandler) HandleWriteFile(
 				mcp.TextContent{
 					Type: "text",
 					Text: "Error: Cannot write to a directory",
-				},
-			},
-			IsError: true,
-		}, nil
-	}
-
-	// Create parent directories if they don't exist
-	parentDir := filepath.Dir(validPath)
-	if err := os.MkdirAll(parentDir, 0755); err != nil {
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{
-				mcp.TextContent{
-					Type: "text",
-					Text: fmt.Sprintf("Error creating parent directories: %v", err),
 				},
 			},
 			IsError: true,
